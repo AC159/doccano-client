@@ -1,7 +1,7 @@
 import os
 import typing
 from urllib.parse import urljoin
-
+import json
 import requests
 
 
@@ -383,6 +383,33 @@ class DoccanoClient(_Router):
 
         try:
             return self.post(url, data=label_payload)
+        except Exception as e:
+            return "Failed (duplicate?): {}".format(e)
+
+    def span_type_upload(
+        self,
+        project_id,
+        file_name,
+        file_path
+    ) -> requests.models.Response:
+        """Uploads labels to be used for annotating a document.
+
+        Args:
+            project_id (int): The project id.
+            file_name (str): Name of the file.
+            file_path (str): Path of the file.
+
+        Returns:
+            requests.models.Response: The request response.
+        """
+        url = "v1/projects/{}/span-type-upload".format(project_id)
+        file = open(file_path + file_name, "rb").read()
+        payload = {
+            "file": file
+        }
+
+        try:
+            return self.post(url, files=payload, as_json=False)
         except Exception as e:
             return "Failed (duplicate?): {}".format(e)
 

@@ -39,6 +39,7 @@ class Client:
         self.client_session.headers.update(
             {"X-CSRFToken": self.client_session.cookies.get("csrftoken")}
         )
+        return response
 
     @property
     def projects(self) -> ProjectsController:
