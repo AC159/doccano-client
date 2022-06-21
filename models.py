@@ -2,6 +2,8 @@ from allennlp.predictors.predictor import Predictor
 from nltk import tokenize
 import json
 
+from merge_models import merge_results
+
 from doccano_api_client import DoccanoClient
 
 from tkinter.filedialog import askopenfilename, asksaveasfilename
@@ -14,7 +16,7 @@ def mergeCommonLabels(listOfLabels):
     length = len(listOfLabels)
     labelStartIndex = 0
     if length > 0:
-        labelStartIndex = listOfLabels[0][0]
+        labelStartIndex = listOfLabels[0][0]  # The starting index is the index of the first label in the list
 
     for index, labelList in enumerate(listOfLabels):
 
@@ -34,11 +36,19 @@ def mergeCommonLabels(listOfLabels):
     return newList
 
 
-def predict(sentence, model):
-    # These two models use different set of tags, It will be useful to check both
-    fine_grained_output = model.predict(sentence=sentence)
+def predict_fine_grained(sentence, fine_grained_model):
+    # Feed the sentence to the fine grained model
+    fine_grained_output = fine_grained_model.predict(sentence=sentence)
     words = fine_grained_output['words']
     labels = fine_grained_output['tags']
+    return words, labels
+
+
+def predict_elmo(sentence, elmo_model):
+    # Feed the sentence to the elmo model
+    elmo_output = elmo_model.predict(sentence=sentence)
+    words = elmo_output['words']
+    labels = elmo_output['tags']
     # print(f"Words: \n {words}")
     # print(f"Labels: \n {labels}")
     # print(f'Words length: {len(words)}')
@@ -50,7 +60,7 @@ def predict(sentence, model):
     return words, labels
 
 
-def main(fine_grained):
+def main(fine_grained, elmo):
     Tk().withdraw()  # we don't want a full GUI, so keep the root window from appearing
     inputFilePath = askopenfilename()  # show an "Open" dialog box and return the path to the selected file
     print(inputFilePath)
@@ -69,30 +79,37 @@ def main(fine_grained):
     outputFile = open(outputFilePath, "a")
     outputFile.truncate(0)  # clear contents of the file starting at the beginning of the file
 
-    # the following characters do not (normally) have spaces after them in a text
-    charsThatNeedNoSpaces = ['(', ')', ',', '-', '.']
-
     for idx, sentence in enumerate(sentences):
 
         startIndexOfLabel = 0
         endIndexOfLabel = 0
         listOfLabels.clear()
-        words, labels = predict(sentence, fine_grained)
 
-        for index, currentLabel in enumerate(labels):
+        # Feed the sentence to both models
+        words, labels_fine_grained = predict_fine_grained(sentence, fine_grained)
+        words_elmo, labels_elmo = predict_elmo(sentence, elmo)
+
+        print(f'Fine grained: \n {words} \n {labels_fine_grained}')
+        print(f'Elmo: \n {words_elmo} \n {labels_elmo}')
+
+        merged_labels = merge_results(labels_fine_grained, labels_elmo)
+        print(f'Merged labels: \n {merged_labels}')
+
+        # Iterate on all labels of the fine grained model and prioritize it over the elmo one
+        for index, currentLabel in enumerate(merged_labels):
 
             splitLabel = currentLabel.split('-')[-1]
 
-            if currentLabel == 'O' and index != len(labels) - 1:
+            if currentLabel == 'O' and index != len(merged_labels) - 1:
                 startIndexOfLabel = startIndexOfLabel + len(words[index]) + 1
                 endIndexOfLabel = endIndexOfLabel + len(words[index]) + 1
                 continue
 
-            if index == len(labels) - 1 or currentLabel != labels[index + 1]:
+            if index == len(merged_labels) - 1 or currentLabel != merged_labels[index + 1]:
                 # the next label is different so we record this label in the list together with the indexes
                 if currentLabel != 'O':
                     listOfLabels.append([startIndexOfLabel, endIndexOfLabel + len(words[index]), splitLabel])
-                if index == len(labels) - 1:
+                if index == len(merged_labels) - 1:
                     # Once we are done with this sentence, we need to merge all common labels in the list
                     mergedLabels = mergeCommonLabels(listOfLabels)
 
@@ -132,7 +149,7 @@ if __name__ == '__main__':
     ner_fine_grained = Predictor.from_path(
         "https://storage.googleapis.com/allennlp-public-models/fine-grained-ner.2021-02-11.tar.gz")
 
-    # ner_elmo = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/ner-elmo.2021-02-12.tar.gz")
+    ner_elmo = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/ner-elmo.2021-02-12.tar.gz")
 
-    main(ner_fine_grained)
+    main(ner_fine_grained, ner_elmo)
     # predict("EternalBlue is a computer exploit developed by the U.S. Exploit National Security Agency (NSA).")
