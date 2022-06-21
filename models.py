@@ -36,27 +36,11 @@ def mergeCommonLabels(listOfLabels):
     return newList
 
 
-def predict_fine_grained(sentence, fine_grained_model):
+def predict(sentence, model):
     # Feed the sentence to the fine grained model
-    fine_grained_output = fine_grained_model.predict(sentence=sentence)
+    fine_grained_output = model.predict(sentence=sentence)
     words = fine_grained_output['words']
     labels = fine_grained_output['tags']
-    return words, labels
-
-
-def predict_elmo(sentence, elmo_model):
-    # Feed the sentence to the elmo model
-    elmo_output = elmo_model.predict(sentence=sentence)
-    words = elmo_output['words']
-    labels = elmo_output['tags']
-    # print(f"Words: \n {words}")
-    # print(f"Labels: \n {labels}")
-    # print(f'Words length: {len(words)}')
-    # print(f'Labels length: {len(labels)}')
-    # print(f"Full output: \n {fine_grained_output}")
-
-    # elmo_output = ner_elmo.predict(sentence=sentence)
-    # print(elmo_output['tags'])
     return words, labels
 
 
@@ -86,8 +70,8 @@ def main(fine_grained, elmo):
         listOfLabels.clear()
 
         # Feed the sentence to both models
-        words, labels_fine_grained = predict_fine_grained(sentence, fine_grained)
-        words_elmo, labels_elmo = predict_elmo(sentence, elmo)
+        words, labels_fine_grained = predict(sentence, fine_grained)
+        words_elmo, labels_elmo = predict(sentence, elmo)
 
         print(f'Fine grained: \n {words} \n {labels_fine_grained}')
         print(f'Elmo: \n {words_elmo} \n {labels_elmo}')
