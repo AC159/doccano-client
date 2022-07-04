@@ -1,6 +1,7 @@
 from allennlp.predictors.predictor import Predictor
 from nltk import tokenize
 import json
+import datefinder
 
 from merge_models import merge_results
 
@@ -10,7 +11,7 @@ from tkinter.filedialog import askopenfilename, asksaveasfilename
 from tkinter import Tk, ttk, StringVar, W, E
 
 
-def mergeCommonLabels(listOfLabels):
+def mergeCommonLabels(listOfLabels, dates):
     newList = list()
 
     length = len(listOfLabels)
@@ -27,11 +28,15 @@ def mergeCommonLabels(listOfLabels):
         If the next label does not have the same name or is not adjacent or we are at the end of the list of labels,
         we change the cursor positions and merge
         """
-        if index == length - 1 or labelEndIndex + 1 != listOfLabels[index + 1][0] or labelName != \
-                listOfLabels[index + 1][2]:
+        if (index == length - 1 or labelEndIndex + 1 != listOfLabels[index + 1][0] or labelName !=
+            listOfLabels[index + 1][2]) and labelName.lower() != 'date':
             newList.append([labelStartIndex, labelEndIndex, labelName])
             if index != length - 1:
                 labelStartIndex = listOfLabels[index + 1][0]
+
+    # add all dates found by the datefinder
+    for date in dates:
+        newList.append([date[2][0], date[2][1], 'DATE'])
 
     return newList
 
@@ -118,7 +123,8 @@ def createFrame(rootWindow, projectSettings):
 
     # Select output file
     ttk.Label(frame, text='Select output file (JSONL extension): ').grid(column=0, row=2, sticky=W)
-    ttk.Button(frame, text="Browse", command=lambda: choose_output_file(projectSettings)).grid(column=2, row=2, sticky=E)
+    ttk.Button(frame, text="Browse", command=lambda: choose_output_file(projectSettings)).grid(column=2, row=2,
+                                                                                               sticky=E)
 
     # ok button at the bottom of the frame
     ttk.Button(frame, text='Done', command=lambda: rootWindow.destroy()).grid(column=2, row=5, pady=50, sticky=E)
@@ -127,7 +133,6 @@ def createFrame(rootWindow, projectSettings):
 
 
 def main(fine_grained, elmo):
-
     doccano_client = DoccanoClient(
         'http://localhost:8000',
         'admin',
@@ -140,8 +145,17 @@ def main(fine_grained, elmo):
     projectSettings.doccanoProjects = projectList
 
     mainWindow = Tk()
+
+    screen_width = mainWindow.winfo_screenwidth()
+    screen_height = mainWindow.winfo_screenheight()
+
+    windowWidth = 450
+    windowHeight = 175
+    center_x = int(screen_width / 2 - windowWidth / 2)
+    center_y = int(screen_height / 2 - windowHeight / 2)
+
     mainWindow.title('Project configuration')
-    mainWindow.geometry("450x175")
+    mainWindow.geometry(f"{windowWidth}x{windowHeight}+{center_x}+{center_y}")
 
     mainWindow.columnconfigure(0, weight=1)
 
@@ -207,9 +221,11 @@ def main(fine_grained, elmo):
                     listOfLabels.append([startIndexOfLabel, endIndexOfLabel + len(words[index]), splitLabel])
                 if index == len(merged_labels) - 1:
                     # Once we are done with this sentence, we need to merge all common labels in the list
-                    mergedLabels = mergeCommonLabels(listOfLabels)
+                    sanitizedSentence = " ".join(words)
+                    dates = datefinder.find_dates(sanitizedSentence, index=True, source=True)
+                    mergedLabels = mergeCommonLabels(listOfLabels, dates)
 
-                    data = {"data": " ".join(words), "label": mergedLabels}
+                    data = {"data": sanitizedSentence, "label": mergedLabels}
                     print(json.dumps(data))
                     outputFile.write(json.dumps(data) + "\n")
                 # if words[index] in charsThatNeedNoSpaces:
