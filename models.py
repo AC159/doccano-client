@@ -54,6 +54,7 @@ class ProjectSettings:
 
     def __init__(self):
         self.inputFilePath = ""
+        self.inputFileName = ""
         self.outputFilePath = ""
         self.outputFileName = ""
 
@@ -82,6 +83,7 @@ def choose_input_file(projectSettings):
     fileName = filePath.split("/")[-1]
 
     projectSettings.inputFilePath = filePath
+    projectSettings.inputFileName = fileName
 
     # update the frame in the GUI that we have selected an input file
     ttk.Label(projectSettings.frame, text=f'{fileName}').grid(column=1, row=1)
@@ -176,11 +178,13 @@ def main(fine_grained, elmo):
         exit(0)
 
     inputFilePath = projectSettings.inputFilePath
+    inputFileName = projectSettings.inputFileName
 
     file = open(inputFilePath, "r")
     fullText = file.read()
     file.close()
-    sentences = tokenize.sent_tokenize(fullText)
+    # sentences = tokenize.sent_tokenize(fullText)
+    sentences = fullText.split('\n')
     listOfLabels = list()
 
     # write processed text to a file
@@ -188,6 +192,8 @@ def main(fine_grained, elmo):
     outputFileName = projectSettings.outputFileName
     outputFile = open(outputFilePath, "a")
     outputFile.truncate(0)  # clear contents of the file starting at the beginning of the file
+
+    inputFileIsSINCategory = inputFileName.__contains__("SIN_")
 
     for idx, sentence in enumerate(sentences):
 
