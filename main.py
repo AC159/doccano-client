@@ -1,4 +1,3 @@
-from tkinter import Tk
 from tkinter.filedialog import askdirectory
 
 import os

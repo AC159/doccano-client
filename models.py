@@ -9,9 +9,10 @@ from doccano_api_client import DoccanoClient
 
 from tkinter.filedialog import askopenfilename, asksaveasfilename
 from tkinter import Tk, ttk, StringVar, W, E
+import pyap
 
 
-def mergeCommonLabels(listOfLabels, dates):
+def mergeCommonLabels(listOfLabels, dates, addresses):
     newList = list()
 
     length = len(listOfLabels)
@@ -34,9 +35,40 @@ def mergeCommonLabels(listOfLabels, dates):
             if index != length - 1:
                 labelStartIndex = listOfLabels[index + 1][0]
 
+    # now that we have merged commons labels together, we can start inserting other kinds of labels in ascending order
+    # of precedence
+
     # add all dates found by the datefinder
     for date in dates:
-        newList.append([date[2][0], date[2][1], 'DATE'])
+        dateLabelStartIndex = date[2][0]
+        dateLabelEndIndex = date[2][1]
+
+        for index, labelList in enumerate(newList[:]):  # iterate on copy of the list of labels
+            labelStartIndex = labelList[0]
+            labelEndIndex = labelList[1]
+
+            # check if both labels overlap and remove the labels that overlap with the date label
+            if (dateLabelStartIndex >= labelStartIndex or dateLabelEndIndex <= labelEndIndex) or \
+                    (labelStartIndex >= dateLabelStartIndex or labelEndIndex <= dateLabelEndIndex):
+                newList.remove(labelList)
+
+        newList.append([dateLabelStartIndex, dateLabelEndIndex, 'DATE'])
+
+    # add all addresses found by pyap
+    for address in addresses:
+        addressStartIndex = address.match_start
+        addressEndIndex = address.match_end
+
+        for index, labelList in enumerate(newList[:]):
+            labelStartIndex = labelList[0]
+            labelEndIndex = labelList[1]
+
+            # check if both labels overlap and remove the labels that overlap with the address label
+            if (addressStartIndex >= labelStartIndex or addressStartIndex <= labelEndIndex) or \
+                    (labelStartIndex >= addressEndIndex or labelEndIndex <= addressEndIndex):
+                newList.remove(labelList)
+
+        newList.append([addressStartIndex, addressEndIndex, 'ADDRESS'])
 
     return newList
 
@@ -135,6 +167,7 @@ def createFrame(rootWindow, projectSettings):
 
 
 def main(fine_grained, elmo):
+
     doccano_client = DoccanoClient(
         'http://localhost:8000',
         'admin',
@@ -193,9 +226,9 @@ def main(fine_grained, elmo):
     outputFile = open(outputFilePath, "a")
     outputFile.truncate(0)  # clear contents of the file starting at the beginning of the file
 
-    inputFileIsSINCategory = inputFileName.__contains__("SIN_")
-
     for idx, sentence in enumerate(sentences):
+
+        sentence = sentence.strip()
 
         startIndexOfLabel = 0
         endIndexOfLabel = 0
@@ -229,20 +262,16 @@ def main(fine_grained, elmo):
                     # Once we are done with this sentence, we need to merge all common labels in the list
                     sanitizedSentence = " ".join(words)
                     dates = datefinder.find_dates(sanitizedSentence, index=True, source=True)
-                    mergedLabels = mergeCommonLabels(listOfLabels, dates)
+                    addresses = pyap.parse(sentence, country='CA')
+                    mergedLabels = mergeCommonLabels(listOfLabels, dates, addresses)
 
                     data = {"data": sanitizedSentence, "label": mergedLabels}
                     print(json.dumps(data))
                     outputFile.write(json.dumps(data) + "\n")
-                # if words[index] in charsThatNeedNoSpaces:
-                #     startIndexOfLabel = endIndexOfLabel + len(words[index])
-                # else:
+
                 startIndexOfLabel = endIndexOfLabel + len(
                     words[index]) + 1  # +1 accounts for the space at the end of the word
 
-            # if words[index] in charsThatNeedNoSpaces:
-            #     endIndexOfLabel = endIndexOfLabel + len(words[index])
-            # else:
             endIndexOfLabel = endIndexOfLabel + len(
                 words[index]) + 1  # +1 accounts for the space at the end of the word
 
