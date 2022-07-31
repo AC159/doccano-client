@@ -3,16 +3,17 @@ from nltk import tokenize
 import json
 import datefinder
 
+import re
 from merge_models import merge_results
 
 from doccano_api_client import DoccanoClient
+import GUI
 
-from tkinter.filedialog import askopenfilename, asksaveasfilename
-from tkinter import Tk, ttk, StringVar, W, E
+from tkinter import Tk, ttk
 import pyap
 
 
-def mergeCommonLabels(listOfLabels, dates, addresses):
+def mergeCommonLabels(listOfLabels, dates, addresses, labelIndexOffset):
     newList = list()
 
     length = len(listOfLabels)
@@ -40,34 +41,46 @@ def mergeCommonLabels(listOfLabels, dates, addresses):
 
     # add all dates found by the datefinder
     for date in dates:
-        dateLabelStartIndex = date[2][0]
-        dateLabelEndIndex = date[2][1]
+        dateLabelStartIndex = date[2][0] + labelIndexOffset
+        dateLabelEndIndex = date[2][1] + labelIndexOffset
+
+        if re.findall(r"\d*\.\d*", date[1]):
+            # Do not register dates that contain floating point numbers
+            continue
 
         for index, labelList in enumerate(newList[:]):  # iterate on copy of the list of labels
             labelStartIndex = labelList[0]
             labelEndIndex = labelList[1]
 
             # check if both labels overlap and remove the labels that overlap with the date label
-            if (dateLabelStartIndex >= labelStartIndex or dateLabelEndIndex <= labelEndIndex) or \
-                    (labelStartIndex >= dateLabelStartIndex or labelEndIndex <= dateLabelEndIndex):
+            if (labelStartIndex <= dateLabelStartIndex <= labelEndIndex) or \
+                    (labelStartIndex <= dateLabelEndIndex <= labelEndIndex) or \
+                    (dateLabelStartIndex <= labelStartIndex <= dateLabelEndIndex) or \
+                    (dateLabelStartIndex <= labelEndIndex <= dateLabelEndIndex):
                 newList.remove(labelList)
 
         newList.append([dateLabelStartIndex, dateLabelEndIndex, 'DATE'])
 
     # add all addresses found by pyap
     for address in addresses:
-        addressStartIndex = address.match_start
-        addressEndIndex = address.match_end
+        addressStartIndex = address.match_start + labelIndexOffset
+        addressEndIndex = address.match_end + labelIndexOffset
 
         for index, labelList in enumerate(newList[:]):
             labelStartIndex = labelList[0]
             labelEndIndex = labelList[1]
 
+            print(f'Label list: {labelList} - address start = {addressStartIndex} end = {addressEndIndex}')
+
             # check if both labels overlap and remove the labels that overlap with the address label
-            if (addressStartIndex >= labelStartIndex or addressStartIndex <= labelEndIndex) or \
-                    (labelStartIndex >= addressEndIndex or labelEndIndex <= addressEndIndex):
+            if (labelStartIndex <= addressStartIndex <= labelEndIndex) or \
+                    (labelStartIndex <= addressEndIndex <= labelEndIndex) or \
+                    (addressStartIndex <= labelStartIndex <= addressEndIndex) or \
+                    (addressStartIndex <= labelEndIndex <= addressEndIndex):
+                print(f'Removed list: {labelList}')
                 newList.remove(labelList)
 
+        print(f'Added new address: {[addressStartIndex, addressEndIndex, "ADDRESS"]}')
         newList.append([addressStartIndex, addressEndIndex, 'ADDRESS'])
 
     return newList
@@ -81,91 +94,6 @@ def predict(sentence, model):
     return words, labels
 
 
-# ----------------------------------------------
-class ProjectSettings:
-
-    def __init__(self):
-        self.inputFilePath = ""
-        self.inputFileName = ""
-        self.outputFilePath = ""
-        self.outputFileName = ""
-
-        self.doccanoProjects = list()
-        self.selectedProjectNameFromDropDown = ""  # name of the selected project in the 'doccanoProjects' variable
-        self.frame = None  # Contains the ttk frame
-
-    def getIdOfSelectedProject(self):
-        for project in self.doccanoProjects['results']:
-            if self.selectedProjectNameFromDropDown == project['name']:
-                return project['id']
-        return -1
-
-    def validParameters(self):
-        return self.inputFilePath != "" and self.outputFilePath != "" and len(self.doccanoProjects) > 0 and \
-               self.selectedProjectNameFromDropDown != ""
-
-    def __str__(self):
-        return f'Input file: {self.inputFilePath}\n Output file: {self.outputFileName}\n ' \
-               f'Selected Doccano Project: {self.selectedProjectNameFromDropDown}\n '
-
-
-def choose_input_file(projectSettings):
-    filePath = askopenfilename()  # show an "Open" dialog box and return the path to the selected file
-    print(filePath)
-    fileName = filePath.split("/")[-1]
-
-    projectSettings.inputFilePath = filePath
-    projectSettings.inputFileName = fileName
-
-    # update the frame in the GUI that we have selected an input file
-    ttk.Label(projectSettings.frame, text=f'{fileName}').grid(column=1, row=1)
-
-
-def choose_output_file(projectSettings):
-    # write processed text to a file
-    outputFilePath = asksaveasfilename()
-    outputFileName = outputFilePath.split("/")[-1]
-    print(outputFilePath)
-    print(outputFileName)
-    projectSettings.outputFilePath = outputFilePath
-    projectSettings.outputFileName = outputFileName
-
-    # update the frame in the GUI that we have selected an output file
-    ttk.Label(projectSettings.frame, text=f'{outputFileName}').grid(column=1, row=2)
-
-
-def createFrame(rootWindow, projectSettings):
-    frame = ttk.Frame(rootWindow)
-
-    frame.columnconfigure(0, weight=3)
-    frame.columnconfigure(1, weight=1)
-    frame.columnconfigure(2, weight=1)
-
-    # Dropdown menu
-    projectNames = [project['name'] for project in projectSettings.doccanoProjects['results']]
-    ttk.Label(frame, text='Select Doccano project: ').grid(column=0, row=0, sticky=W)
-
-    # this must be set after the main window has been created
-    projectSettings.selectedProjectNameFromDropDown = StringVar()
-    projectSettings.selectedProjectNameFromDropDown.set(projectNames[0])
-    dropdown = ttk.OptionMenu(frame, projectSettings.selectedProjectNameFromDropDown, projectNames[0], *projectNames)
-    dropdown.grid(column=2, row=0)
-
-    # Select input file
-    ttk.Label(frame, text='Select input file: ').grid(column=0, row=1, sticky=W)
-    ttk.Button(frame, text="Browse", command=lambda: choose_input_file(projectSettings)).grid(column=2, row=1, sticky=E)
-
-    # Select output file
-    ttk.Label(frame, text='Select output file (JSONL extension): ').grid(column=0, row=2, sticky=W)
-    ttk.Button(frame, text="Browse", command=lambda: choose_output_file(projectSettings)).grid(column=2, row=2,
-                                                                                               sticky=E)
-
-    # ok button at the bottom of the frame
-    ttk.Button(frame, text='Done', command=lambda: rootWindow.destroy()).grid(column=2, row=5, pady=50, sticky=E)
-
-    return frame
-
-
 def main(fine_grained, elmo):
 
     doccano_client = DoccanoClient(
@@ -176,7 +104,7 @@ def main(fine_grained, elmo):
 
     projectList = doccano_client.get_project_list()
 
-    projectSettings = ProjectSettings()
+    projectSettings = GUI.ProjectSettings()
     projectSettings.doccanoProjects = projectList
 
     mainWindow = Tk()
@@ -194,7 +122,7 @@ def main(fine_grained, elmo):
 
     mainWindow.columnconfigure(0, weight=1)
 
-    projectSettings.frame = createFrame(mainWindow, projectSettings)
+    projectSettings.frame = GUI.createFrame(mainWindow, projectSettings)
     projectSettings.frame.grid(column=0, row=0)
     mainWindow.mainloop()  # show the window until the user selects all files and clicks 'done'
 
@@ -226,9 +154,15 @@ def main(fine_grained, elmo):
     outputFile = open(outputFilePath, "a")
     outputFile.truncate(0)  # clear contents of the file starting at the beginning of the file
 
+    finalConcatenatedSentences = ""
+    finalListOfLabels = list()
+
     for idx, sentence in enumerate(sentences):
 
         sentence = sentence.strip()
+
+        if len(sentence) == 0:
+            continue
 
         startIndexOfLabel = 0
         endIndexOfLabel = 0
@@ -238,11 +172,16 @@ def main(fine_grained, elmo):
         words, labels_fine_grained = predict(sentence, fine_grained)
         words_elmo, labels_elmo = predict(sentence, elmo)
 
-        print(f'Fine grained: \n {words} \n {labels_fine_grained}')
-        print(f'Elmo: \n {words_elmo} \n {labels_elmo}')
+        # print(f'Fine grained: \n {words} \n {labels_fine_grained}')
+        # print(f'Elmo: \n {words_elmo} \n {labels_elmo}')
 
         merged_labels = merge_results(labels_fine_grained, labels_elmo)
-        print(f'Merged labels: \n {merged_labels}')
+        # print(f'Merged labels: \n {merged_labels}')
+
+        labelIndexOffset = len(finalConcatenatedSentences) + 1
+
+        sanitizedSentence = " ".join(words)
+        finalConcatenatedSentences = finalConcatenatedSentences + "\n" + sanitizedSentence
 
         # Iterate on all labels of the fine grained model and prioritize it over the elmo one
         for index, currentLabel in enumerate(merged_labels):
@@ -257,17 +196,21 @@ def main(fine_grained, elmo):
             if index == len(merged_labels) - 1 or currentLabel != merged_labels[index + 1]:
                 # the next label is different so we record this label in the list together with the indexes
                 if currentLabel != 'O':
-                    listOfLabels.append([startIndexOfLabel, endIndexOfLabel + len(words[index]), splitLabel])
+                    listOfLabels.append([startIndexOfLabel + labelIndexOffset,
+                                         endIndexOfLabel + len(words[index]) + labelIndexOffset,
+                                         splitLabel])
+
                 if index == len(merged_labels) - 1:
                     # Once we are done with this sentence, we need to merge all common labels in the list
-                    sanitizedSentence = " ".join(words)
                     dates = datefinder.find_dates(sanitizedSentence, index=True, source=True)
                     addresses = pyap.parse(sentence, country='CA')
-                    mergedLabels = mergeCommonLabels(listOfLabels, dates, addresses)
 
-                    data = {"data": sanitizedSentence, "label": mergedLabels}
-                    print(json.dumps(data))
-                    outputFile.write(json.dumps(data) + "\n")
+                    mergedLabels = mergeCommonLabels(listOfLabels, dates, addresses, labelIndexOffset)
+                    for label in mergedLabels:
+                        finalListOfLabels.append(label)
+
+                    # data = {"data": sanitizedSentence, "label": mergedLabels}
+                    # outputFile.write(json.dumps(data) + "\n")
 
                 startIndexOfLabel = endIndexOfLabel + len(
                     words[index]) + 1  # +1 accounts for the space at the end of the word
@@ -275,6 +218,9 @@ def main(fine_grained, elmo):
             endIndexOfLabel = endIndexOfLabel + len(
                 words[index]) + 1  # +1 accounts for the space at the end of the word
 
+    print(finalConcatenatedSentences)
+    data = {"data": finalConcatenatedSentences, "label": finalListOfLabels}
+    outputFile.write(json.dumps(data) + "\n")
     outputFile.close()
 
     # upload text file to the doccano instance
@@ -288,9 +234,9 @@ def main(fine_grained, elmo):
 
 if __name__ == '__main__':
     ner_fine_grained = Predictor.from_path(
-        "https://storage.googleapis.com/allennlp-public-models/fine-grained-ner.2021-02-11.tar.gz")
+        "C:\\Users\\Anastassy Cap\\Downloads\\fine-grained-ner.2021-02-11.tar.gz")
 
-    ner_elmo = Predictor.from_path("https://storage.googleapis.com/allennlp-public-models/ner-elmo.2021-02-12.tar.gz")
+    ner_elmo = Predictor.from_path("C:\\Users\\Anastassy Cap\\Downloads\\ner-elmo.2021-02-12.tar.gz")
 
     main(ner_fine_grained, ner_elmo)
     # predict("EternalBlue is a computer exploit developed by the U.S. Exploit National Security Agency (NSA).")
