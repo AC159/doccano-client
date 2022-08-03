@@ -203,7 +203,7 @@ def main(fine_grained, elmo):
                 if index == len(merged_labels) - 1:
                     # Once we are done with this sentence, we need to merge all common labels in the list
                     dates = datefinder.find_dates(sanitizedSentence, index=True, source=True)
-                    addresses = pyap.parse(sentence, country='CA')
+                    addresses = pyap.parse(sanitizedSentence, country='CA')
 
                     mergedLabels = mergeCommonLabels(listOfLabels, dates, addresses, labelIndexOffset)
                     for label in mergedLabels:
